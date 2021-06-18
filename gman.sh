@@ -27,6 +27,13 @@ gman-folder-unknown() {
   error "Unknown command [${1}]"
   command-usage 'gman' 'folder' 'find' 'FOLDER_NAME'
   command-usage 'gman' 'folder' 'children' 'FOLDER_ID'
+  command-usage 'gman' 'folder' 'list'
+}
+
+gman-folder-list() {
+  gcloud resource-manager folders list \
+    --organization="${e11_organization}" \
+    --configuration="${e11_service_configuration}"
 }
 
 gman-folder-find() {
@@ -76,7 +83,10 @@ gman-folder() {
   shift 1
   case "${cmd}" in
     children) gman-folder-children "$@";;
+    describe) gman-folder-children "$@";;
     find) gman-folder-find "$@";;
+    info) gman-folder-children "$@";;
+    list) gman-folder-list;;
     *) gman-folder-unknown "${cmd}";;
   esac
 }
