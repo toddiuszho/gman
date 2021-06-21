@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+export BLIMP_VERSION='0.0.0'
+
+#
+# Freshen global platforms
+# Freshen global envs
+# Freshen global platform-envs
+# Load local platforms
+# Load local envs
+# Load local platform-envs
+# blimp-lock.sh
+#
+
+declare \
+  BLIMP_CONTEXT_DIR='./gondola' \
+  BLIMP_DEFAULT_HOSTNAME='github.com' \
+  BLIMP_DEFAULT_FETCH_PROTOCOL='https' \
+  COL_BLUE="\033[34m" \
+  COL_CLEAR="\033[0m" \
+  COL_CYAN="\033[36m" \
+  COL_GREEN="\033[32m" \
+  COL_MAGENTA="\033[35m" \
+  COL_RED="\033[31m" \
+  COL_YELLOW="\033[33m"
+
+declare -A bin_dependencies=([curl]='Web CLI' [git]='Git SCM CLI')
+# TODO verify bin dependencies present
+
+declare -A host_organization_aliases=(
+  [@e11]='e11.github.com'
+  [@i2]='i2.github.com'
+)
+declare -A host_organization_remaps=(
+  [github.com/6FTS]='@e11'
+  [github.com/CNect]='@e11'
+  [github.com/ConcentricCompliance]='@e11'
+  [github.com/e11automaton]='@e11'
+  [github.com/e11community]='@e11'
+  [github.com/e11sandbox]='@e11'
+  [github.com/enginnering11]='@e11'
+  [github.com/intriguefortwo]='@i2'
+)
+
+log-error() {
+  echo -e "[${COL_RED}ERROR${COL_CLEAR}] $*" >&2
+}
+
+log-info() {
+  echo -e "[${COL_MAGENTA}INFO${COL_CLEAR}] $*" >&2
+}
+
+log-warn() {
+  echo -e "[${COL_YELLOW}WARN${COL_CLEAR}] $*" >&2
+}
+
+blimp-colors() {
+  if [ "${TERM:0:5}" != 'xterm' ]; then
+    COL_BLUE=''
+    COL_CLEAR=''
+    COL_CYAN=''
+    COL_GREEN=''
+    COL_MAGENTA=''
+    COL_RED=''
+    COL_YELLOW=''
+  fi
+}
+
+blimp-find-context-dir() {
+  local search_path='.'
+  for i in $(seq 1 1024); do
+    if [ -d "${search_path}/gondola" ]; then
+      BLIMP_CONTEXT_DIR='./gondola'
+      return 0
+    fi
+
+    if [ -d "${search_path}/.git" ]; then
+      log-error "No blimp context directory can be found!"
+      return 1
+    fi
+
+    search_path="${search_path}/.."
+    if ! [ -d "${search_path}" ]; then
+      log-error "No blimp context directory can be found!"
+      return 1
+    fi
+  done
+}
+
+blimp-init() {
+  # ! [ -f ./blimp ] && \
+  #   curl -qsLk4 -o './blimp' --url "https://github.com/toddiuszho/blimp/releases/stable/blimp" && \
+  #   chmod +x ./blimp
+  ! [ -f ./blimp ] && \cp "$0" ./
+  ! [ -d ./gondola ] && mkdir -p ./gondola
+  declare -a subs=(lib platform env platform-env scratch local-platform local-env local-platform-env)
+  for sub in "${subs[@]}"; do
+    ! [ -d "./gondola/${sub}" ] && mkdir -p "./gondola/${sub}"
+  done
+  return 0
+}
+
+blimp-populate-collection() {
+  local collection_name="${1}"
+  local git_resource_path="${2}"
+}
+
+blimp-import-usage() {
+  echo "Usage:" >&2
+  echo "  blimp import organization/repository" >&2
+  echo "  blimp import hostname/organization/repository" >&2
+}
+
+ blimp-import() {
+  local import_path="${1}"
+  local explicit_version="${2}"
+ 
+  if [ -z "${import_path}" ]; then
+    log-error "Empty import path"
+    blimp-import-usage
+    return 1
+  fi
+ 
+  local import_project="${import_path##*/}"
+ 
+  if [ "${import_project}" = "${import_path}" ]; then
+    log-error "No discernible organization from [${import_path}]"
+    blimp-import-usage
+    return 1
+  fi
+ 
+  local import_host_org="${import_path%/*}"
+  local import_host="${import_host_org%/*}"
+  local import_org="${import_host_org#*/}"
+  if [ "${import_host}" = "${import_host_org}" ]; then
+    import_host="${BLIMP_DEFAULT_HOSTNAME}"
+    import_host_org="${BLIMP_DEFAULT_HOSTNAME}/${import_org}"
+  fi
+  
+  local remap="${!host_organization_remaps[$import_host_org]}"
+  if [ -n "${remap}" ]; then
+    log-info "Remapping [${import_host_org}] to [${remap}]"
+    if [ '@' = "${remap:0:1}" ]; then
+      old_remap="${remap}"
+      remap="${!host_organization_aliases[$old_remap]}"
+      if [ -z "${remap}" ]; then
+        log-error "Remap alias [${old_remap}] could not be found!"
+      else
+        log-info "Remapping [${import_host_org}] to [${remap}/${import_project}] via alias [${old_remap}]"
+        import_host="${remap}"
+      fi
+    else
+      import_host="${remap}"
+    fi
+  fi
+ 
+  local import_resolved_path="${import_host}/${import_org}/${import_project}"
+  local scratch_dir="${BLIMP_CONTEXT_DIR}/scratch/lib/${import_resolved_path}"
+  [ -n "${scratch_dir}" ] && [ "${scratch_dir}" != '/' ] && rm -rf "${scratch_dir}"
+  mkdir -p "${scratch_dir}"
+ 
+  # TODO: verbose to not quietly clone
+  # TODO: import by branch, a diff way to specify version
+  # TODO: clone debug mode. don't zap .git
+  # TODO: clone deep mode. don't do depth=1
+  clone_options=()
+  if [ -n "${explicit_version}" ]; then
+    log-info "Using explicit version [${explicit_version}]"
+    clone_options+=("--branch=${explicit_version}")
+  fi
+  git clone \
+    --quiet \
+    --depth=1 \
+    "${clone_options[@]}" \
+    "https://${import_resolved_path}.git" \
+    "${scratch_dir}"
+  if [ $? -ne 0 ]; then
+    log-error "Could not clone [${import_resolved_path}]"
+    return 1
+  fi
+  if [ -d "${scratch_dir}/.git" ]; then
+    rm -rf "${scratch_dir}/.git"
+  fi
+  if [ -f "${scratch_dir}/.gitignore" ]; then
+    rm -rf "${scratch_dir}/.gitignore"
+  fi
+
+  local import_version='0.0.0'
+  if [ -n "${explicit_version}" ]; then
+    import_version="${explicit_version}"
+  elif [ -f "${scratch_dir}/VERSION" ]; then
+    import_version="$(cat "${scratch_dir}/VERSION")"
+    # TODO: validate version format
+  else
+    log-warn "No VERSION could be found for ${import_resolved_path}"
+  fi
+ 
+  local import_dir="${BLIMP_CONTEXT_DIR}/lib/${import_resolved_path}/${import_version}"
+  if ! [ -e "${import_dir}" ]; then
+    mkdir -p "${import_dir}"
+    cp -R "${scratch_dir}/" "${import_dir}/"
+    local package_file="${import_dir}/package.sh"
+    if [ -f "${package_file}" ]; then
+      . "${package_file}"
+    else
+      log-warn "No package file to import for ${import_resolved_path}"
+    fi
+  fi
+ 
+  return 0
+}
+
+blimp-version() {
+  echo "${BLIMP_VERSION}"
+}
+
+blimp-help() {
+  echo '[[ Bash Package Manager ]]'
+  echo ''
+  echo "Usage: blimp COMMAND [ARGS...]"
+  echo ''
+  echo 'Commands:'
+  echo '  help              help instructions for using blimp'
+  echo '  import GIT_PATH   import a bash package from host/org/repo'
+  echo '  init              initialize CWD for blimp use'
+  echo '  version           print version of blimp'
+}
+
+blimp-start() {
+  blimp-colors
+  blimp-find-context-dir
+}
+
+if [ "${1}" = 'init' ]; then
+  blimp-init
+  exit $?
+fi
+
+blimp-start
+if [ $? -ne 0 ]; then
+  exit 1
+fi
+
+if [ "${1}" = 'help' ]; then
+  blimp-help "$@"
+  exit $?
+elif [ "${1}" = 'import' ]; then
+  shift 1
+  blimp-import "$@"
+  exit $?
+elif [ "${1}" = 'version' ]; then
+  blimp-version
+  exit 0
+else
+  log-error "Unknown command [${1}]"
+fi
