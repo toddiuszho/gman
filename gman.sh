@@ -2,7 +2,11 @@
 [ -e "${HOME}/.gmanrc" ] && . "${HOME}/.gmanrc"
 
 error() {
-  echo -e "\033[31m$*\033[0m" >&2
+  echo -e "\033[31m[ERROR] $*\033[0m" >&2
+}
+
+info() {
+  echo -e "\033[35m[INFO] $*\033[0m" >&2
 }
 
 diagnostic() {
@@ -71,6 +75,14 @@ gman-folder-children() {
   if [ -z "${FOLDER_ID}" ]; then
     command-usage 'gman folder children FOLDER_ID'
     return 1
+  fi
+
+  if [ -n "$(echo "${FOLDER_ID}" | tr -d '0-9')" ]; then
+    LOOKUP="$(gman folder find "$@")"
+    if [ $? -eq 0 ] && [ -n "${LOOKUP}" ]; then
+      info "Looked up folder name [${FOLDER_ID}] to use folder ID [${LOOKUP}]."
+      FOLDER_ID="${LOOKUP}"
+    fi
   fi
 
   gcloud projects list \
