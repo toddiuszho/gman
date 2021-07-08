@@ -25,6 +25,8 @@ command-usage() {
 
 category-unknown() {
   error "Unknown category: [${1}]"
+  echo '' >&2
+  echo '  Categories: folder' >&2
 }
 
 gman-folder-unknown() {
