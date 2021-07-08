@@ -26,7 +26,7 @@ command-usage() {
 category-unknown() {
   error "Unknown category: [${1}]"
   echo '' >&2
-  echo '  Categories: folder' >&2
+  echo '  Categories: folder project secrets' >&2
 }
 
 gman-folder-unknown() {
@@ -105,6 +105,74 @@ gman-folder() {
   esac
 }
 
+gman-project-unknown() {
+  error "Unknown command [${1}]"
+  command-usage 'gman' 'project' 'find' 'PROJECT_NAME'
+}
+
+gman-project-find() {
+  local PROJECT_NAME="${1}"
+  gcloud projects list \
+    --filter=" name: ${PROJECT_NAME} " \
+    --configuration="${e11_service_configuration}"
+}
+
+gman-project() {
+  cmd="${1}"
+  shift 1
+  case "${cmd}" in
+    find) gman-project-find "$@";;
+    *) gman-project-unknown "${cmd}";;
+  esac
+}
+
+gman-secrets-unknown() {
+  error "Unknown command [${1}]"
+  command-usage 'gman' 'secrets' 'spread' 'FOLDER_NAME' 'SECRET_NAME'
+}
+
+gman-secrets-spread() {
+  FOLDER_ID="${1}"
+  if [ -z "${FOLDER_ID}" ]; then
+    command-usage 'gman folder children FOLDER_ID'
+    return 1
+  fi
+
+  if [ -n "$(echo "${FOLDER_ID}" | tr -d '0-9')" ]; then
+    LOOKUP="$(gman folder find "$@")"
+    if [ $? -eq 0 ] && [ -n "${LOOKUP}" ]; then
+      info "Looked up folder name [${FOLDER_ID}] to use folder ID [${LOOKUP}]."
+      FOLDER_ID="${LOOKUP}"
+    fi
+  fi
+
+  projs="$(gcloud projects list \
+    --filter " parent.id: '${FOLDER_ID}' " \
+    --configuration="${e11_service_configuration}" \
+    --format=json
+  )"
+  if [ $? -ne 0 ]; then
+    echo "Could not get [${LOOKUP}] -> [${FOLDER_ID}] project list"
+    return 1
+  fi
+  declare -A sProjMapLines="$(  echo "${projs}" | jq -Mr '.[] | ("  [" + .projectId + "]=" + .projectNumber)'  )"
+  sProjMap="declare -A projMap=(${sProjMapLines})"
+  eval "${sProjMap}"
+  for project_name in "${!projMap[@]}"; do
+    project_id="${projMap[$project_name]}"
+    echo "${project_name} --> ${project_id}"
+  done
+}
+
+gman-secrets() {
+  cmd="${1}"
+  shift 1
+  case "${cmd}" in
+    spread) gman-secrets-spread "$@";;
+    *) gman-secrets-unknown "${cmd}";;
+  esac
+}
+
 gman() {
   category="${1}"
   if [ -z "${category}" ]; then
@@ -115,6 +183,8 @@ gman() {
   shift 1
   case "${category}" in
     folder) gman-folder "$@";;
+    project) gman-project "$@";;
+    secrets) gman-secrets "$@";;
     *) category-unknown "${category}"; return 1;;
   esac
 }
