@@ -161,7 +161,7 @@ gman-project() {
 
 gman-secrets-unknown() {
   error "Unknown command [${1}]"
-  command-usage 'gman' 'secrets' 'list' 'FOLDER_NAME'
+  command-usage 'gman' 'secrets' 'list' 'FOLDER_NAME [REGEX]'
   command-usage 'gman' 'secrets' 'spread' 'FOLDER_NAME' 'SECRET_NAME'
 }
 
@@ -188,6 +188,12 @@ gman-secrets-list() {
   fi
   shift 1
 
+  secret_filter_opt=''
+  if [ -n "$1" ] && [ "${1:0:2}" != '--' ];  then
+    secret_filter_opt="--filter=name~$1"
+    shift 1
+  fi
+
   LOOKUP="$(gman folder find "${FOLDER_ID}")"
   if [ $? -eq 0 ] && [ -n "${LOOKUP}" ]; then
     info "Looked up folder name [${FOLDER_ID}] to use as parent folder ID [${LOOKUP}]."
@@ -205,7 +211,7 @@ gman-secrets-list() {
   declare -a projIds=(${projs})
   for project_id in "${projIds[@]}"; do
     echo -e "\n\033[35m${project_id}\n--------------------\033[0m"
-    gcloud secrets list --project=${project_id} "$@"
+    gcloud secrets list --project=${project_id} ${secret_filter_opt} "$@"
   done
 }
 
