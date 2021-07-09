@@ -29,6 +29,42 @@ category-unknown() {
   echo '  Categories: folder project secrets' >&2
 }
 
+OS="$(uname)"
+OS="${OS,,}"
+
+is-macos() {
+  [ "${OS}" = 'darwin' ]
+}
+
+is-linux() {
+  [ "${OS}" = 'linux' ]
+}
+
+is-windows() {
+  [ "${OS}" = 'windows' ]
+}
+
+is-cygwin() {
+  [ "${OS}" = 'cygwin' ]
+}
+
+if is-macos; then
+
+  # awk
+  if [ -z "${CMD_AWK}" ]; then
+    type gawk >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+      CMD_AWK="$(which gawk)"
+    else
+      log-error "Must install GNU grep with 'brew install gawk'"
+      exit 1
+    fi
+  fi
+
+fi
+
+CMD_AWK="${CMD_AWK:-/usr/bin/awk}"
+
 gman-folder-unknown() {
   error "Unknown command [${1}]"
   command-usage 'gman' 'folder' 'find' 'FOLDER_NAME'
@@ -51,10 +87,14 @@ gman-folder-find() {
     return 1
   fi
 
-  folders_resp=$(gcloud resource-manager folders list \
+  maybe="${folder_aliases[$folder_name]}"
+  [ -n "${maybe}" ] && folder_name="${maybe}"
+
+  folders_resp="$(gcloud resource-manager folders list \
     --organization="${e11_organization}" \
     --configuration="${e11_service_configuration}" \
-    --format=json)
+    --filter=displayName=${folder_name} \
+    --format='get(name)')"
 
   if [ $? -ne 0 ]; then
     error "Cannot retrieve folder list"
@@ -62,14 +102,7 @@ gman-folder-find() {
     return 1
   fi
 
-  resource_string=$(echo "${folders_resp}" | jq -Mr '.[] | select(.displayName == "'${folder_name}'") | .name')
-
-  if [ $? -ne 0 ] || [ -z "${resource_string}" ]; then
-    error "No folder found named [${folder_name}]."
-    return 1
-  fi
-
-  echo "${resource_string##folders/}"
+  basename "${folders_resp}"
 }
 
 gman-folder-children() {
@@ -113,7 +146,7 @@ gman-project-unknown() {
 gman-project-find() {
   local PROJECT_NAME="${1}"
   gcloud projects list \
-    --filter=" name: ${PROJECT_NAME} " \
+    --filter=name=${PROJECT_NAME} \
     --configuration="${e11_service_configuration}"
 }
 
@@ -131,36 +164,64 @@ gman-secrets-unknown() {
   command-usage 'gman' 'secrets' 'spread' 'FOLDER_NAME' 'SECRET_NAME'
 }
 
-gman-secrets-spread() {
-  FOLDER_ID="${1}"
-  if [ -z "${FOLDER_ID}" ]; then
-    command-usage 'gman folder children FOLDER_ID'
-    return 1
-  fi
-
-  if [ -n "$(echo "${FOLDER_ID}" | tr -d '0-9')" ]; then
-    LOOKUP="$(gman folder find "$@")"
-    if [ $? -eq 0 ] && [ -n "${LOOKUP}" ]; then
-      info "Looked up folder name [${FOLDER_ID}] to use folder ID [${LOOKUP}]."
-      FOLDER_ID="${LOOKUP}"
-    fi
-  fi
-
+gman-project-map-copypasta() {
   projs="$(gcloud projects list \
-    --filter " parent.id: '${FOLDER_ID}' " \
+    --filter=parent.id=${FOLDER_ID} \
     --configuration="${e11_service_configuration}" \
-    --format=json
+    --format='get(projectId, projectNumber)'
   )"
   if [ $? -ne 0 ]; then
     echo "Could not get [${LOOKUP}] -> [${FOLDER_ID}] project list"
     return 1
   fi
-  declare -A sProjMapLines="$(  echo "${projs}" | jq -Mr '.[] | ("  [" + .projectId + "]=" + .projectNumber)'  )"
+  declare -A sProjMapLines="$(  echo "${projs}" | "${CMD_AWK}" '{ print "[" $1 "]=" $2 }'  )"
   sProjMap="declare -A projMap=(${sProjMapLines})"
   eval "${sProjMap}"
-  for project_name in "${!projMap[@]}"; do
-    project_id="${projMap[$project_name]}"
-    echo "${project_name} --> ${project_id}"
+}
+
+gman-secrets-spread() {
+  local FOLDER_ID="${1}"
+  local SECRET_NAME="${2}"
+  if [ -z "${FOLDER_ID}" ] || [ -z "${SECRET_NAME}" ]; then
+    command-usage 'gman secrets spread FOLDER_ID SECRET_NAME'
+    return 1
+  fi
+  shift 2
+
+  LOOKUP="$(gman folder find "${FOLDER_ID}")"
+  if [ $? -eq 0 ] && [ -n "${LOOKUP}" ]; then
+    info "Looked up folder name [${FOLDER_ID}] to use as parent folder ID [${LOOKUP}]."
+  fi
+
+  secret_file_path="${HOME}/${FOLDER_ID}/${SECRET_NAME}"
+  if ! [ -f "${secret_file_path}" ]; then
+    echo "Could find file data file at [${secret_file_path}]" >&2
+    return 1
+  fi
+
+  projs="$(gcloud projects list \
+    --filter=parent.id=${LOOKUP} \
+    --configuration="${e11_service_configuration}" \
+    --format='get(projectId, projectNumber)'
+  )"
+  if [ $? -ne 0 ]; then
+    echo "Could not get [${LOOKUP}] -> [${FOLDER_ID}] project list"
+    return 1
+  fi
+  declare -A sProjMapLines="$(  echo "${projs}" | "${CMD_AWK}" '{ print "[" $1 "]=" $2 }'  )"
+  sProjMap="declare -A projMap=(${sProjMapLines})"
+  eval "${sProjMap}"
+  for project_id in "${!projMap[@]}"; do
+    project_number="${projMap[$project_id]}"
+    slcap="$(gcloud secrets list --filter="name~${SECRET_NAME}" --project=${project_id} "$@" 2>/dev/null)"
+    if [ -z "${slcap}" ]; then
+      gcloud secrets create "${SECRET_NAME}" --project=${project_id} "$@"
+      [ $? -ne 0 ] && continue
+    fi
+    vcap="$(gcloud secrets versions list "${SECRET_NAME}" --project=${project_id} "$@" 2>/dev/null)"
+    if [ -z "${vcap}" ]; then
+      gcloud secrets versions add "${SECRET_NAME}" --data-file="${secret_file_path}" --project=${project_id} "$@"
+    fi
   done
 }
 
