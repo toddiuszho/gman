@@ -161,6 +161,7 @@ gman-project() {
 
 gman-secrets-unknown() {
   error "Unknown command [${1}]"
+  command-usage 'gman' 'secrets' 'list-all' 'FOLDER_NAME'
   command-usage 'gman' 'secrets' 'spread' 'FOLDER_NAME' 'SECRET_NAME'
 }
 
@@ -177,6 +178,35 @@ gman-project-map-copypasta() {
   declare -A sProjMapLines="$(  echo "${projs}" | "${CMD_AWK}" '{ print "[" $1 "]=" $2 }'  )"
   sProjMap="declare -A projMap=(${sProjMapLines})"
   eval "${sProjMap}"
+}
+
+gman-secrets-list-all() {
+  local FOLDER_ID="${1}"
+  if [ -z "${FOLDER_ID}" ]; then
+    command-usage 'gman secrets list-all FOLDER_ID'
+    return 1
+  fi
+  shift 1
+
+  LOOKUP="$(gman folder find "${FOLDER_ID}")"
+  if [ $? -eq 0 ] && [ -n "${LOOKUP}" ]; then
+    info "Looked up folder name [${FOLDER_ID}] to use as parent folder ID [${LOOKUP}]."
+  fi
+
+  projs="$(gcloud projects list \
+    --filter=parent.id=${LOOKUP} \
+    --configuration="${e11_service_configuration}" \
+    --format='get(projectId)'
+  )"
+  if [ $? -ne 0 ]; then
+    echo "Could not get [${LOOKUP}] -> [${FOLDER_ID}] project list"
+    return 1
+  fi
+  declare -a projIds=(${projs})
+  for project_id in "${projIds[@]}"; do
+    echo -e "\n\033[35m${project_id}\n--------------------\033[0m"
+    gcloud secrets list --project=${project_id} "$@"
+  done
 }
 
 gman-secrets-spread() {
@@ -229,6 +259,7 @@ gman-secrets() {
   cmd="${1}"
   shift 1
   case "${cmd}" in
+    list-all) gman-secrets-list-all "$@";;
     spread) gman-secrets-spread "$@";;
     *) gman-secrets-unknown "${cmd}";;
   esac
