@@ -161,7 +161,7 @@ gman-project() {
 
 gman-secrets-unknown() {
   error "Unknown command [${1}]"
-  command-usage 'gman' 'secrets' 'list-all' 'FOLDER_NAME'
+  command-usage 'gman' 'secrets' 'list' 'FOLDER_NAME'
   command-usage 'gman' 'secrets' 'spread' 'FOLDER_NAME' 'SECRET_NAME'
 }
 
@@ -180,10 +180,10 @@ gman-project-map-copypasta() {
   eval "${sProjMap}"
 }
 
-gman-secrets-list-all() {
+gman-secrets-list() {
   local FOLDER_ID="${1}"
   if [ -z "${FOLDER_ID}" ]; then
-    command-usage 'gman secrets list-all FOLDER_ID'
+    command-usage 'gman secrets list FOLDER_ID'
     return 1
   fi
   shift 1
@@ -259,7 +259,7 @@ gman-secrets() {
   cmd="${1}"
   shift 1
   case "${cmd}" in
-    list-all) gman-secrets-list-all "$@";;
+    list) gman-secrets-list "$@";;
     spread) gman-secrets-spread "$@";;
     *) gman-secrets-unknown "${cmd}";;
   esac
