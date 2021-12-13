@@ -56,7 +56,7 @@ if is-macos; then
     if [ $? -eq 0 ]; then
       CMD_AWK="$(which gawk)"
     else
-      log-error "Must install GNU grep with 'brew install gawk'"
+      error "Must install GNU grep with 'brew install gawk'"
       exit 1
     fi
   fi
